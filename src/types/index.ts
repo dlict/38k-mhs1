@@ -6,7 +6,10 @@
 export type CalculationMode = 'direct' | 'dates';
 
 export type EducationLevel =
-  | 'bachelor' // ปริญญาตรี
+  | 'bachelor_4' // ปริญญาตรี (หลักสูตร ๔ ปี)
+  | 'bachelor_5' // ปริญญาตรี (หลักสูตร ๕ ปี เช่น ครุศาสตร์/ศึกษาศาสตร์ ๕ ปี)
+  | 'bachelor_6' // ปริญญาตรี (หลักสูตร ๖ ปี เช่น สัตวแพทย์/เภสัช)
+  | 'bachelor' // ปริญญาตรีทั่วไป (alias สำหรับ ป.ตรี ๔ ปี)
   | 'master' // ปริญญาโท
   | 'doctoral' // ปริญญาเอก
   | 'vocational_diploma' // ปวส. / อนุปริญญา

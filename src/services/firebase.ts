@@ -70,6 +70,15 @@ export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
 };
 
+export const ensureSheetsAccessToken = async (): Promise<string> => {
+  if (cachedAccessToken) return cachedAccessToken;
+  const res = await googleSignIn();
+  if (!res?.accessToken) {
+    throw new Error('กรุณาอนุญาตการเข้าถึง Google Sheet เพื่อบันทึกหรือลบข้อมูล');
+  }
+  return res.accessToken;
+};
+
 export const setCachedAccessToken = (token: string | null) => {
   cachedAccessToken = token;
 };

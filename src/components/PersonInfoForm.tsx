@@ -160,12 +160,18 @@ export const PersonInfoForm: React.FC<PersonInfoFormProps> = ({
             <span>วุฒิการศึกษา</span>
           </label>
           <select
-            value={profile.educationLevel || 'bachelor'}
+            value={profile.educationLevel || 'bachelor_4'}
             onChange={(e) => onChange({ educationLevel: e.target.value as any })}
             className={inputClass}
           >
-            <option value="bachelor">
-              ปริญญาตรี (เกณฑ์ {profile.promotionCase === 'case1' ? '๖' : '๕'} ปี)
+            <option value="bachelor_4">
+              ปริญญาตรี ๔ ปี (เกณฑ์ {profile.promotionCase === 'case1' ? '๖' : '๕'} ปี)
+            </option>
+            <option value="bachelor_5">
+              ปริญญาตรี ๕ ปี เช่น ครุศาสตร์/ศึกษาศาสตร์ (เกณฑ์ {profile.promotionCase === 'case1' ? '๕' : '๔'} ปี)
+            </option>
+            <option value="bachelor_6">
+              ปริญญาตรี ๖ ปี เช่น สัตวแพทย์/เภสัช (เกณฑ์ {profile.promotionCase === 'case1' ? '๔' : '๓'} ปี)
             </option>
             <option value="master">ปริญญาโท (เกณฑ์ ๔ ปี)</option>
             <option value="doctoral">ปริญญาเอก (เกณฑ์ ๒ ปี)</option>

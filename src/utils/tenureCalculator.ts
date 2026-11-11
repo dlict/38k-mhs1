@@ -193,9 +193,15 @@ export function checkPromotionEligibility(
     } else if (educationLevel === 'master') {
       requiredYears = 4;
       educationLevelName = 'ปริญญาโท (เกณฑ์ ๔ ปี)';
+    } else if (educationLevel === 'bachelor_6') {
+      requiredYears = 4;
+      educationLevelName = 'ปริญญาตรี ๖ ปี (เกณฑ์ ๔ ปี)';
+    } else if (educationLevel === 'bachelor_5') {
+      requiredYears = 5;
+      educationLevelName = 'ปริญญาตรี ๕ ปี (เกณฑ์ ๕ ปี)';
     } else {
       requiredYears = 6;
-      educationLevelName = 'ปริญญาตรี (เกณฑ์ ๖ ปี)';
+      educationLevelName = 'ปริญญาตรี ๔ ปี (เกณฑ์ ๖ ปี)';
     }
   } else if (promotionCase === 'case2') {
     // กรณีที่ ๒: ชำนาญการ -> ชำนาญการพิเศษ (ตำแหน่งว่างปกติ)
@@ -211,9 +217,15 @@ export function checkPromotionEligibility(
     } else if (educationLevel === 'master') {
       requiredYears = 4;
       educationLevelName = 'ปริญญาโท (เกณฑ์ ๔ ปี)';
+    } else if (educationLevel === 'bachelor_6') {
+      requiredYears = 3;
+      educationLevelName = 'ปริญญาตรี ๖ ปี (เกณฑ์ ๓ ปี)';
+    } else if (educationLevel === 'bachelor_5') {
+      requiredYears = 4;
+      educationLevelName = 'ปริญญาตรี ๕ ปี (เกณฑ์ ๔ ปี)';
     } else {
       requiredYears = 5;
-      educationLevelName = 'ปริญญาตรี (เกณฑ์ ๕ ปี)';
+      educationLevelName = 'ปริญญาตรี ๔ ปี (เกณฑ์ ๕ ปี)';
     }
   } else {
     // กรณีที่ ๓: ชำนาญการ -> ชำนาญการพิเศษ (แทนผู้เกษียณอายุราชการ)
@@ -230,9 +242,15 @@ export function checkPromotionEligibility(
     } else if (educationLevel === 'master') {
       requiredYears = 4;
       educationLevelName = 'ปริญญาโท (เกณฑ์ ๔ ปี)';
+    } else if (educationLevel === 'bachelor_6') {
+      requiredYears = 3;
+      educationLevelName = 'ปริญญาตรี ๖ ปี (เกณฑ์ ๓ ปี)';
+    } else if (educationLevel === 'bachelor_5') {
+      requiredYears = 4;
+      educationLevelName = 'ปริญญาตรี ๕ ปี (เกณฑ์ ๔ ปี)';
     } else {
       requiredYears = 5;
-      educationLevelName = 'ปริญญาตรี (เกณฑ์ ๕ ปี)';
+      educationLevelName = 'ปริญญาตรี ๔ ปี (เกณฑ์ ๕ ปี)';
     }
   }
 

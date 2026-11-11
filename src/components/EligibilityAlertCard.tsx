@@ -202,14 +202,20 @@ export const EligibilityAlertCard: React.FC<EligibilityAlertCardProps> = ({
             </p>
           </div>
 
-          <div className="w-full md:w-80">
+          <div className="w-full md:w-96">
             <select
-              value={educationLevel}
+              value={educationLevel === 'bachelor' ? 'bachelor_4' : educationLevel}
               onChange={(e) => onChangeEducationLevel(e.target.value as EducationLevel)}
               className="w-full px-3.5 py-2.5 bg-white border-2 border-slate-300 rounded-xl text-sm sm:text-base font-bold text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20"
             >
-              <option value="bachelor">
-                ปริญญาตรี (ป.ตรี) — {promotionCase === 'case1' ? 'เกณฑ์ครองตำแหน่ง ๖ ปี' : 'เกณฑ์ครองตำแหน่ง ๕ ปี'}
+              <option value="bachelor_4">
+                ปริญญาตรี ๔ ปี — {promotionCase === 'case1' ? 'เกณฑ์ ๖ ปี' : 'เกณฑ์ ๕ ปี'}
+              </option>
+              <option value="bachelor_5">
+                ปริญญาตรี ๕ ปี (ครุศาสตร์/ศึกษาศาสตร์) — {promotionCase === 'case1' ? 'เกณฑ์ ๕ ปี' : 'เกณฑ์ ๔ ปี'}
+              </option>
+              <option value="bachelor_6">
+                ปริญญาตรี ๖ ปี (สัตวแพทย์/เภสัช) — {promotionCase === 'case1' ? 'เกณฑ์ ๔ ปี' : 'เกณฑ์ ๓ ปี'}
               </option>
               <option value="master">
                 ปริญญาโท (ป.โท) — เกณฑ์ครองตำแหน่ง ๔ ปี

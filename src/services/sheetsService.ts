@@ -130,37 +130,181 @@ async function writeHeaderRow(accessToken: string, sheetName: string): Promise<v
 }
 
 /**
- * ดึงรายการบันทึกเวลาปฏิบัติงานย้อนหลังจาก Google Sheet
+ * ฟังก์ชันแยกวิเคราะห์ CSV ที่รองรับเครื่องหมายคำพูดและข้อความหลายบรรทัด
  */
-export async function fetchSheetRecords(accessToken: string, sheetName: string = DEFAULT_SHEET_TAB_NAME): Promise<SheetRecord[]> {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${TARGET_SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!A2:T500`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
+export function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentVal = '';
+  let insideQuotes = false;
 
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`ไม่สามารถอ่านข้อมูลจาก Google Sheets ได้: ${errorText}`);
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const nextCh = text[i + 1];
+
+    if (ch === '"' && insideQuotes && nextCh === '"') {
+      currentVal += '"';
+      i++;
+    } else if (ch === '"') {
+      insideQuotes = !insideQuotes;
+    } else if (ch === ',' && !insideQuotes) {
+      currentRow.push(currentVal);
+      currentVal = '';
+    } else if ((ch === '\r' || ch === '\n') && !insideQuotes) {
+      if (ch === '\r' && nextCh === '\n') i++;
+      currentRow.push(currentVal);
+      if (currentRow.some((c) => c.trim().length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentVal = '';
+    } else {
+      currentVal += ch;
+    }
   }
 
-  const data = await res.json();
-  const rows: any[][] = data.values || [];
+  if (currentVal || currentRow.length > 0) {
+    currentRow.push(currentVal);
+    if (currentRow.some((c) => c.trim().length > 0)) {
+      rows.push(currentRow);
+    }
+  }
 
-  const records: SheetRecord[] = rows
-    .map((row, index) => {
-      if (!row || row.length === 0 || !row[0]) return null;
+  return rows;
+}
 
-      // Handle both new 20-column schema and old 16-column schema
-      let isNewSchema = false;
-      if (row.length > 16 || row[6] === 'ปริญญาตรี' || row[6] === 'ปริญญาโท' || row[6] === 'ปริญญาเอก') {
-        isNewSchema = true;
+/**
+ * ดึงรายการบันทึกเวลาปฏิบัติงานจาก Google Sheet โดยตรง (ไม่ต้องล็อกอิน)
+ */
+export async function fetchSheetRecords(accessToken?: string, sheetName: string = DEFAULT_SHEET_TAB_NAME): Promise<SheetRecord[]> {
+  try {
+    // 1. ดึงข้อมูลผ่าน gviz CSV endpoint ของ Google Sheet (เปิดสาธารณะ / ใช้งานได้ทันทีโดยไม่ต้อง Login)
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${TARGET_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
+    const csvRes = await fetch(csvUrl);
+
+    if (csvRes.ok) {
+      const csvText = await csvRes.text();
+      const allRows = parseCSV(csvText);
+
+      // แถวแรกคือหัวตาราง A1:T1 แถวถัดมาคือข้อมูลตั้งแต่แถว 2 (row index 2)
+      if (allRows.length > 1) {
+        const dataRows = allRows.slice(1);
+        const parsedRecords: SheetRecord[] = [];
+
+        for (let index = 0; index < dataRows.length; index++) {
+          const row = dataRows[index];
+          if (!row || row.length === 0 || !row[0]?.trim()) continue;
+
+          const rowIndex = index + 2; // ตำแหน่งแถวจริงใน Google Sheet
+          const jsonField = row[19] || row[15] || '';
+          let profileObj: any = null;
+          let positionsObj: any = null;
+
+          if (jsonField) {
+            try {
+              const parsed = JSON.parse(jsonField);
+              profileObj = parsed.profile;
+              positionsObj = parsed.positions;
+            } catch {
+              // ignore
+            }
+          }
+
+          // แยกแยะระหว่าง schema 20 คอลัมน์ กับ schema 16 คอลัมน์เดิม
+          const isNewSchema =
+            row.length > 16 ||
+            row[6]?.includes('ปริญญา') ||
+            row[7]?.includes('ชำนาญการ') ||
+            row[9]?.includes('ครบกำหนด');
+
+          let rec: SheetRecord;
+          if (isNewSchema) {
+            rec = {
+              id: String(row[0] || `REC-${Date.now()}`),
+              timestamp: String(row[1] || ''),
+              employeeId: String(row[2] || '-'),
+              fullName: String(row[3] || ''),
+              department: String(row[4] || '-'),
+              currentPosition: String(row[5] || '-'),
+              educationLevel: String(row[6] || profileObj?.educationLevel || 'ปริญญาตรี'),
+              targetLevel: String(row[7] || profileObj?.targetLevel || 'ชำนาญการ'),
+              promotionCase: profileObj?.promotionCase
+                ? profileObj.promotionCase === 'case3'
+                  ? 'กรณีที่ ๓ (แทนผู้เกษียณ)'
+                  : profileObj.promotionCase === 'case2'
+                  ? 'กรณีที่ ๒ (ว่างปกติ)'
+                  : 'กรณีที่ ๑'
+                : undefined,
+              totalText: String(row[8] || (profileObj ? '' : row[11] || '')),
+              eligibilityStatus: String(row[9] || '-'),
+              projectedDate: String(row[10] || '-'),
+              positionCount: parseInt(String(row[11] || (positionsObj?.length ? positionsObj.length : '1')), 10) || 1,
+              positionsSummary: String(row[12] || ''),
+              finalYears: parseInt(String(row[13] || '0'), 10) || 0,
+              finalMonths: parseInt(String(row[14] || '0'), 10) || 0,
+              finalDays: parseInt(String(row[15] || '0'), 10) || 0,
+              approxTotalDays: parseInt(String(row[16] || '0'), 10) || 0,
+              remarks: String(row[17] || profileObj?.remarks || '-'),
+              recordedBy: String(row[18] || 'ผู้ใช้งานระบบ'),
+              positionsJson: jsonField,
+              rowIndex,
+            };
+          } else {
+            // รูปแบบเดิม 16 คอลัมน์
+            rec = {
+              id: String(row[0] || `REC-${Date.now()}`),
+              timestamp: String(row[1] || ''),
+              employeeId: String(row[2] || '-'),
+              fullName: String(row[3] || ''),
+              department: String(row[4] || '-'),
+              currentPosition: String(row[5] || '-'),
+              educationLevel: 'ปริญญาตรี',
+              targetLevel: 'ชำนาญการ',
+              positionCount: parseInt(String(row[6] || '1'), 10) || 1,
+              positionsSummary: String(row[7] || ''),
+              finalYears: parseInt(String(row[8] || '0'), 10) || 0,
+              finalMonths: parseInt(String(row[9] || '0'), 10) || 0,
+              finalDays: parseInt(String(row[10] || '0'), 10) || 0,
+              totalText: String(row[11] || ''),
+              approxTotalDays: parseInt(String(row[12] || '0'), 10) || 0,
+              eligibilityStatus: '-',
+              projectedDate: '-',
+              remarks: String(row[13] || '-'),
+              recordedBy: String(row[14] || 'ผู้ใช้งานระบบ'),
+              positionsJson: jsonField,
+              rowIndex,
+            };
+          }
+          parsedRecords.push(rec);
+        }
+
+        parsedRecords.reverse();
+        saveToLocalStorage(parsedRecords);
+        return parsedRecords;
       }
+    }
+  } catch (csvErr) {
+    console.warn('Direct Sheet CSV fetch notice:', csvErr);
+  }
 
-      let rec: SheetRecord;
-      if (isNewSchema) {
-        rec = {
+  // 2. หากเรียก CSV ไม่สำเร็จแต่มี Token ให้ใช้ Sheets API v4
+  if (accessToken) {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${TARGET_SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!A2:T500`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const rows: any[][] = data.values || [];
+      const records: SheetRecord[] = [];
+
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
+        if (!row || row.length === 0 || !row[0]) continue;
+        records.push({
           id: String(row[0] || `rec-${index + 1}`),
           timestamp: String(row[1] || ''),
           employeeId: String(row[2] || ''),
@@ -182,41 +326,16 @@ export async function fetchSheetRecords(accessToken: string, sheetName: string =
           recordedBy: String(row[18] || ''),
           positionsJson: String(row[19] || ''),
           rowIndex: index + 2,
-        };
-      } else {
-        // Fallback for earlier 16-column format
-        rec = {
-          id: String(row[0] || `rec-${index + 1}`),
-          timestamp: String(row[1] || ''),
-          employeeId: String(row[2] || ''),
-          fullName: String(row[3] || ''),
-          department: String(row[4] || ''),
-          currentPosition: String(row[5] || ''),
-          educationLevel: 'ปริญญาตรี',
-          targetLevel: 'ชำนาญการ',
-          positionCount: parseInt(String(row[6] || '0'), 10) || 0,
-          positionsSummary: String(row[7] || ''),
-          finalYears: parseInt(String(row[8] || '0'), 10) || 0,
-          finalMonths: parseInt(String(row[9] || '0'), 10) || 0,
-          finalDays: parseInt(String(row[10] || '0'), 10) || 0,
-          totalText: String(row[11] || ''),
-          approxTotalDays: parseInt(String(row[12] || '0'), 10) || 0,
-          eligibilityStatus: '-',
-          projectedDate: '-',
-          remarks: String(row[13] || ''),
-          recordedBy: String(row[14] || ''),
-          positionsJson: String(row[15] || ''),
-          rowIndex: index + 2,
-        };
+        });
       }
 
-      return rec;
-    })
-    .filter((r): r is SheetRecord => r !== null)
-    .reverse();
+      records.reverse();
+      saveToLocalStorage(records);
+      return records;
+    }
+  }
 
-  saveToLocalStorage(records);
-  return records;
+  return getLocalRecords();
 }
 
 /**

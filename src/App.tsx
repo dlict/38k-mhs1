@@ -10,6 +10,7 @@ import {
   googleSignIn,
   logout,
   getAccessToken,
+  ensureSheetsAccessToken,
 } from './services/firebase';
 import {
   TARGET_SPREADSHEET_ID,
@@ -61,7 +62,7 @@ const INITIAL_PROFILE: PersonProfile = {
   employeeId: '',
   department: '',
   currentPosition: '',
-  educationLevel: 'bachelor',
+  educationLevel: 'bachelor_4',
   targetLevel: 'pro',
   promotionCase: 'case1',
   remarks: '',
@@ -122,37 +123,30 @@ export default function App() {
     onConfirm: () => {},
   });
 
-  // 1. Initialize Auth on Mount
+  // 1. Initialize & load directly from Google Sheet on Mount (no login required)
   useEffect(() => {
-    const local = getLocalRecords();
-    if (local && local.length > 0) {
-      setRecords(local);
-    }
+    loadSheetRecordsDirectly();
 
     const unsubscribe = initAuth(
-      async (authUser, token) => {
+      (authUser) => {
         setUser(authUser);
-        await verifyAndLoadSheet(token);
       },
       () => {
         setUser(null);
-        setIsSheetConnected(false);
       }
     );
 
     return () => unsubscribe();
   }, []);
 
-  const verifyAndLoadSheet = async (token: string) => {
+  const loadSheetRecordsDirectly = async (token?: string) => {
     setIsLoadingRecords(true);
     try {
-      await getSpreadsheetDetails(token);
-      setIsSheetConnected(true);
       const sheetData = await fetchSheetRecords(token);
       setRecords(sheetData);
+      setIsSheetConnected(true);
     } catch (err: any) {
-      console.warn('Sheet sync warning:', err);
-      setIsSheetConnected(false);
+      console.warn('Google Sheet fetch notice:', err);
     } finally {
       setIsLoadingRecords(false);
     }
@@ -164,22 +158,15 @@ export default function App() {
       const res = await googleSignIn();
       if (res) {
         setUser(res.user);
-        await verifyAndLoadSheet(res.accessToken);
+        await loadSheetRecordsDirectly(res.accessToken);
         showToast('เชื่อมต่อกับ Google Sheet เรียบร้อยแล้ว', 'success');
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      showToast(err.message || 'เข้าสู่ระบบไม่สำเร็จ', 'error');
+      showToast(err.message || 'เชื่อมต่อสิทธิ์ไม่สำเร็จ', 'error');
     } finally {
       setIsLoggingIn(false);
     }
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    setUser(null);
-    setIsSheetConnected(false);
-    showToast('ออกจากระบบแล้ว', 'info');
   };
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -194,14 +181,17 @@ export default function App() {
     return calculateTotalTenure(positions, profile.promotionCase || 'case1', profile.educationLevel);
   }, [positions, profile.promotionCase, profile.educationLevel]);
 
-  // Handlers for Positions
+  // Handlers for Positions: auto-fill startDate from previous position's endDate
   const handleAddPosition = () => {
+    const lastPos = positions[positions.length - 1];
+    const inheritedStartDate = lastPos?.endDate || '';
+
     const newEntry: PositionEntry = {
       id: `pos-${Date.now()}`,
       positionTitle: '',
-      organization: '',
+      organization: lastPos?.organization || '',
       mode: 'dates',
-      startDate: '',
+      startDate: inheritedStartDate,
       endDate: '',
       years: 0,
       months: 0,
@@ -276,32 +266,6 @@ export default function App() {
 
   // 3. Save to Google Sheets (Individual Record)
   const handleSaveToSheet = async () => {
-    let token = await getAccessToken();
-
-    if (!token) {
-      try {
-        setIsLoggingIn(true);
-        const res = await googleSignIn();
-        if (res) {
-          setUser(res.user);
-          token = res.accessToken;
-          setIsSheetConnected(true);
-        } else {
-          return;
-        }
-      } catch (err: any) {
-        showToast('กรุณาลงชื่อเข้าใช้ด้วยบัญชี Google เพื่อบันทึกลงชีต', 'error');
-        return;
-      } finally {
-        setIsLoggingIn(false);
-      }
-    }
-
-    if (!token) {
-      showToast('ไม่พบสิทธิ์การเข้าถึง Google Sheets', 'error');
-      return;
-    }
-
     if (!profile.fullName.trim()) {
       showToast('กรุณาระบุชื่อ-นามสกุล ของผู้ปฏิบัติงานก่อนบันทึก', 'error');
       return;
@@ -309,6 +273,23 @@ export default function App() {
 
     setIsSaving(true);
     try {
+      let token = await getAccessToken();
+      if (!token) {
+        try {
+          token = await ensureSheetsAccessToken();
+        } catch (authErr: any) {
+          showToast(authErr.message || 'กรุณาอนุญาตสิทธิ์เพื่อบันทึกลง Google Sheet', 'error');
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      if (!token) {
+        showToast('ไม่พบสิทธิ์การบันทึกลง Google Sheet', 'error');
+        setIsSaving(false);
+        return;
+      }
+
       const nowStr = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
 
       // Create positions summary text with date range and calculated result
@@ -332,11 +313,15 @@ export default function App() {
           ? 'ปริญญาเอก'
           : profile.educationLevel === 'master'
           ? 'ปริญญาโท'
+          : profile.educationLevel === 'bachelor_6'
+          ? 'ปริญญาตรี (๖ ปี)'
+          : profile.educationLevel === 'bachelor_5'
+          ? 'ปริญญาตรี (๕ ปี)'
           : profile.educationLevel === 'vocational_diploma'
           ? 'ปวส./อนุปริญญา'
           : profile.educationLevel === 'vocational_cert'
           ? 'ปวช.'
-          : 'ปริญญาตรี';
+          : 'ปริญญาตรี (๔ ปี)';
 
       const promoCaseLabel =
         profile.promotionCase === 'case3'
@@ -441,19 +426,18 @@ export default function App() {
       isDestructive: true,
       onConfirm: async () => {
         setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
-        const token = await getAccessToken();
-        if (!token) {
-          showToast('กรุณาลงชื่อเข้าใช้ Google เพื่อลบข้อมูลในชีต', 'error');
-          return;
-        }
-
         try {
+          let token = await getAccessToken();
+          if (!token) {
+            token = await ensureSheetsAccessToken();
+          }
+
           if (rec.rowIndex) {
             await deleteRecordFromGoogleSheet(token, rec.rowIndex);
           }
           const updated = await fetchSheetRecords(token);
           setRecords(updated);
-          showToast(`ลบข้อมูล "${rec.fullName}" เรียบร้อยแล้ว`, 'info');
+          showToast(`ลบข้อมูล "${rec.fullName}" ออกจาก Google Sheet เรียบร้อยแล้ว`, 'info');
         } catch (err: any) {
           showToast(`ลบข้อมูลไม่สำเร็จ: ${err.message}`, 'error');
         }
@@ -485,12 +469,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Navbar with Font Size Controls & Auth */}
+      {/* Navbar with Font Size Controls & Direct Google Sheet Status */}
       <Navbar
-        user={user}
-        onLogin={handleLogin}
-        onLogout={handleLogout}
-        isLoggingIn={isLoggingIn}
         fontSize={fontSize}
         setFontSize={setFontSize}
         onOpenHistory={() => setIsHistoryOpen(true)}
@@ -620,11 +600,8 @@ export default function App() {
             onSelectRecord={handleSelectRecordFromHistory}
             onRequestDelete={handleRequestDelete}
             onRefresh={async () => {
-              const token = await getAccessToken();
-              if (token) {
-                await verifyAndLoadSheet(token);
-                showToast('รีเฟรชข้อมูลจากชีตเรียบร้อย', 'info');
-              }
+              await loadSheetRecordsDirectly();
+              showToast('รีเฟรชข้อมูลจาก Google Sheet เรียบร้อย', 'info');
             }}
             onAddNewPerson={handleStartNewPerson}
             isLoading={isLoadingRecords}
@@ -640,10 +617,10 @@ export default function App() {
           </div>
           <ul className="list-disc pl-5 space-y-1 text-slate-600">
             <li>
-              <strong>ระดับชำนาญการ (ประเภทวิชาการ):</strong> ดำรงตำแหน่งระดับปฏิบัติการมาแล้วไม่น้อยกว่า ๖ ปี (วุฒิปริญญาตรี), ๔ ปี (วุฒิปริญญาโท), หรือ ๒ ปี (วุฒิปริญญาเอก)
+              <strong>ระดับชำนาญการ (ประเภทวิชาการ):</strong> ดำรงตำแหน่งระดับปฏิบัติการมาแล้วไม่น้อยกว่า ๖ ปี (วุฒิปริญญาตรี ๔ ปี), ๕ ปี (วุฒิปริญญาตรี ๕ ปี), ๔ ปี (วุฒิปริญญาโท), หรือ ๒ ปี (วุฒิปริญญาเอก)
             </li>
             <li>
-              <strong>ระดับชำนาญการพิเศษ (ประเภทวิชาการ):</strong> ดำรงตำแหน่งระดับชำนาญการมาแล้วไม่น้อยกว่า ๕ ปี (วุฒิปริญญาตรี) หรือ ๔ ปี (วุฒิปริญญาโท/เอก)
+              <strong>ระดับชำนาญการพิเศษ (ประเภทวิชาการ):</strong> ดำรงตำแหน่งระดับชำนาญการมาแล้วไม่น้อยกว่า ๕ ปี (วุฒิปริญญาตรี ๔ ปี), ๔ ปี (วุฒิปริญญาตรี ๕ ปี / ปริญญาโท) หรือ ๒ ปี (ปริญญาเอก)
             </li>
             <li>
               <strong>การรวมเศษวันและเดือน:</strong> รวมเศษ ๓๐ วัน นับเป็น ๑ เดือน, รวมเศษ ๑๒ เดือน นับเป็น ๑ ปี ตามระเบียบการนับเวลาราชการ
@@ -669,13 +646,8 @@ export default function App() {
         records={records}
         isLoading={isLoadingRecords}
         onRefresh={async () => {
-          const token = await getAccessToken();
-          if (token) {
-            await verifyAndLoadSheet(token);
-            showToast('รีเฟรชข้อมูลจากชีตเรียบร้อย', 'info');
-          } else {
-            showToast('กรุณาลงชื่อเข้าใช้ Google ก่อนเพื่อรีเฟรชชีต', 'info');
-          }
+          await loadSheetRecordsDirectly();
+          showToast('รีเฟรชข้อมูลจาก Google Sheet เรียบร้อย', 'info');
         }}
         onSelectRecord={handleSelectRecordFromHistory}
         onRequestDelete={handleRequestDelete}
