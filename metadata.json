@@ -1,0 +1,8 @@
+{
+  "name": "ระบบคำนวณเวลาปฏิบัติงานและอายุงาน (Work Tenure Calculator)",
+  "description": "ระบบคำนวณและสรุปผลรวมเวลาปฏิบัติงาน ปี เดือน วัน แต่ละตำแหน่งรายบุคคล ตัวหนังสือใหญ่ชัดเจน พร้อมบันทึกซิงค์ข้อมูลลง Google Sheets แบบเรียลไทม์",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
